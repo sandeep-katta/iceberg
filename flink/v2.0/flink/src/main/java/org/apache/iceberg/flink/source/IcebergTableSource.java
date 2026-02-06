@@ -31,6 +31,7 @@ import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.table.connector.ProviderContext;
+import org.apache.flink.types.RowKind;
 import org.apache.flink.table.connector.source.DataStreamScanProvider;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.ScanTableSource;
@@ -198,6 +199,23 @@ public class IcebergTableSource
 
   @Override
   public ChangelogMode getChangelogMode() {
+    String changelogMode =
+        properties.getOrDefault(
+            FlinkReadOptions.STREAMING_CHANGELOG_MODE,
+            FlinkReadOptions.STREAMING_CHANGELOG_MODE_NONE);
+
+    if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_UPSERT.equalsIgnoreCase(changelogMode)) {
+      return ChangelogMode.upsert();
+    } else if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG.equalsIgnoreCase(
+        changelogMode)) {
+      return ChangelogMode.newBuilder()
+          .addContainedKind(RowKind.INSERT)
+          .addContainedKind(RowKind.UPDATE_BEFORE)
+          .addContainedKind(RowKind.UPDATE_AFTER)
+          .addContainedKind(RowKind.DELETE)
+          .build();
+    }
+
     return ChangelogMode.insertOnly();
   }
 

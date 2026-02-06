@@ -84,6 +84,19 @@ public interface Table {
   }
 
   /**
+   * Create a new {@link IncrementalDataScan} for this table.
+   *
+   * <p>Unlike {@link IncrementalAppendScan} which only considers append snapshots, this scan
+   * includes data files from all data-changing snapshot types (append, overwrite, delete). This is
+   * useful for reading incremental changes from upsert-enabled tables.
+   *
+   * @return an incremental data scan
+   */
+  default IncrementalDataScan newIncrementalDataScan() {
+    throw new UnsupportedOperationException("Incremental data scan is not supported");
+  }
+
+  /**
    * Return the {@link Schema schema} for this table.
    *
    * @return this table's schema

@@ -120,4 +120,13 @@ public class FlinkReadOptions {
       ConfigOptions.key(PREFIX + WATERMARK_COLUMN_TIME_UNIT)
           .enumType(TimeUnit.class)
           .defaultValue(TimeUnit.MICROSECONDS);
+
+  public static final String STREAMING_CHANGELOG_MODE = "streaming-changelog-mode";
+  public static final String STREAMING_CHANGELOG_MODE_NONE = "none";
+  public static final String STREAMING_CHANGELOG_MODE_UPSERT = "upsert";
+  public static final String STREAMING_CHANGELOG_MODE_CHANGELOG = "changelog";
+  public static final ConfigOption<String> STREAMING_CHANGELOG_MODE_OPTION =
+      ConfigOptions.key(PREFIX + STREAMING_CHANGELOG_MODE)
+          .stringType()
+          .defaultValue(STREAMING_CHANGELOG_MODE_NONE);
 }

@@ -26,11 +26,14 @@ import org.apache.flink.annotation.Internal;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.IncrementalAppendScan;
+import org.apache.iceberg.IncrementalDataScan;
+import org.apache.iceberg.IncrementalScan;
 import org.apache.iceberg.Scan;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScan;
 import org.apache.iceberg.expressions.Expression;
+import org.apache.iceberg.flink.FlinkReadOptions;
 import org.apache.iceberg.flink.source.split.IcebergSourceSplit;
 import org.apache.iceberg.hadoop.Util;
 import org.apache.iceberg.io.CloseableIterable;
@@ -84,39 +87,14 @@ public class FlinkSplitPlanner {
   static CloseableIterable<CombinedScanTask> planTasks(
       Table table, ScanContext context, ExecutorService workerPool) {
     ScanMode scanMode = checkScanMode(context);
-    if (scanMode == ScanMode.INCREMENTAL_APPEND_SCAN) {
+    if (scanMode == ScanMode.INCREMENTAL_DATA_SCAN) {
+      IncrementalDataScan scan = table.newIncrementalDataScan();
+      scan = refineScanWithBaseConfigs(scan, context, workerPool);
+      return configureIncrementalScan(scan, context, table);
+    } else if (scanMode == ScanMode.INCREMENTAL_APPEND_SCAN) {
       IncrementalAppendScan scan = table.newIncrementalAppendScan();
       scan = refineScanWithBaseConfigs(scan, context, workerPool);
-
-      if (context.startTag() != null) {
-        Preconditions.checkArgument(
-            table.snapshot(context.startTag()) != null,
-            "Cannot find snapshot with tag %s",
-            context.startTag());
-        scan = scan.fromSnapshotExclusive(table.snapshot(context.startTag()).snapshotId());
-      }
-
-      if (context.startSnapshotId() != null) {
-        Preconditions.checkArgument(
-            context.startTag() == null, "START_SNAPSHOT_ID and START_TAG cannot both be set");
-        scan = scan.fromSnapshotExclusive(context.startSnapshotId());
-      }
-
-      if (context.endTag() != null) {
-        Preconditions.checkArgument(
-            table.snapshot(context.endTag()) != null,
-            "Cannot find snapshot with tag %s",
-            context.endTag());
-        scan = scan.toSnapshot(table.snapshot(context.endTag()).snapshotId());
-      }
-
-      if (context.endSnapshotId() != null) {
-        Preconditions.checkArgument(
-            context.endTag() == null, "END_SNAPSHOT_ID and END_TAG cannot both be set");
-        scan = scan.toSnapshot(context.endSnapshotId());
-      }
-
-      return scan.planTasks();
+      return configureIncrementalScan(scan, context, table);
     } else {
       TableScan scan = table.newScan();
       scan = refineScanWithBaseConfigs(scan, context, workerPool);
@@ -137,18 +115,64 @@ public class FlinkSplitPlanner {
     }
   }
 
+  private static <T extends IncrementalScan<T, FileScanTask, CombinedScanTask>>
+      CloseableIterable<CombinedScanTask> configureIncrementalScan(
+          T scan, ScanContext context, Table table) {
+    T configured = scan;
+
+    if (context.startTag() != null) {
+      Preconditions.checkArgument(
+          table.snapshot(context.startTag()) != null,
+          "Cannot find snapshot with tag %s",
+          context.startTag());
+      configured =
+          configured.fromSnapshotExclusive(table.snapshot(context.startTag()).snapshotId());
+    }
+
+    if (context.startSnapshotId() != null) {
+      Preconditions.checkArgument(
+          context.startTag() == null, "START_SNAPSHOT_ID and START_TAG cannot both be set");
+      configured = configured.fromSnapshotExclusive(context.startSnapshotId());
+    }
+
+    if (context.endTag() != null) {
+      Preconditions.checkArgument(
+          table.snapshot(context.endTag()) != null,
+          "Cannot find snapshot with tag %s",
+          context.endTag());
+      configured = configured.toSnapshot(table.snapshot(context.endTag()).snapshotId());
+    }
+
+    if (context.endSnapshotId() != null) {
+      Preconditions.checkArgument(
+          context.endTag() == null, "END_SNAPSHOT_ID and END_TAG cannot both be set");
+      configured = configured.toSnapshot(context.endSnapshotId());
+    }
+
+    return configured.planTasks();
+  }
+
   @VisibleForTesting
   enum ScanMode {
     BATCH,
-    INCREMENTAL_APPEND_SCAN
+    INCREMENTAL_APPEND_SCAN,
+    INCREMENTAL_DATA_SCAN
   }
 
   @VisibleForTesting
   static ScanMode checkScanMode(ScanContext context) {
-    if (context.startSnapshotId() != null
-        || context.endSnapshotId() != null
-        || context.startTag() != null
-        || context.endTag() != null) {
+    boolean hasIncrementalRange =
+        context.startSnapshotId() != null
+            || context.endSnapshotId() != null
+            || context.startTag() != null
+            || context.endTag() != null;
+
+    if (hasIncrementalRange) {
+      String changelogMode = context.streamingChangelogMode();
+      if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_UPSERT.equalsIgnoreCase(changelogMode)
+          || FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG.equalsIgnoreCase(changelogMode)) {
+        return ScanMode.INCREMENTAL_DATA_SCAN;
+      }
       return ScanMode.INCREMENTAL_APPEND_SCAN;
     } else {
       return ScanMode.BATCH;

@@ -210,4 +210,13 @@ public class FlinkReadConf {
         .defaultValue(FlinkReadOptions.WATERMARK_COLUMN_TIME_UNIT_OPTION.defaultValue())
         .parse();
   }
+
+  public String streamingChangelogMode() {
+    return confParser
+        .stringConf()
+        .option(FlinkReadOptions.STREAMING_CHANGELOG_MODE)
+        .flinkConfig(FlinkReadOptions.STREAMING_CHANGELOG_MODE_OPTION)
+        .defaultValue(FlinkReadOptions.STREAMING_CHANGELOG_MODE_OPTION.defaultValue())
+        .parse();
+  }
 }

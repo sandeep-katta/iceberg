@@ -70,6 +70,7 @@ public class ScanContext implements Serializable {
   private final int maxAllowedPlanningFailures;
   private final String watermarkColumn;
   private final TimeUnit watermarkColumnTimeUnit;
+  private final String streamingChangelogMode;
 
   private ScanContext(
       boolean caseSensitive,
@@ -99,7 +100,8 @@ public class ScanContext implements Serializable {
       String branch,
       String tag,
       String startTag,
-      String endTag) {
+      String endTag,
+      String streamingChangelogMode) {
     this.caseSensitive = caseSensitive;
     this.snapshotId = snapshotId;
     this.tag = tag;
@@ -129,6 +131,7 @@ public class ScanContext implements Serializable {
     this.maxAllowedPlanningFailures = maxAllowedPlanningFailures;
     this.watermarkColumn = watermarkColumn;
     this.watermarkColumnTimeUnit = watermarkColumnTimeUnit;
+    this.streamingChangelogMode = streamingChangelogMode;
   }
 
   void validate() {
@@ -287,6 +290,10 @@ public class ScanContext implements Serializable {
     return watermarkColumnTimeUnit;
   }
 
+  public String streamingChangelogMode() {
+    return streamingChangelogMode;
+  }
+
   public ScanContext copyWithAppendsBetween(Long newStartSnapshotId, long newEndSnapshotId) {
     return ScanContext.builder()
         .caseSensitive(caseSensitive)
@@ -315,6 +322,7 @@ public class ScanContext implements Serializable {
         .maxAllowedPlanningFailures(maxAllowedPlanningFailures)
         .watermarkColumn(watermarkColumn)
         .watermarkColumnTimeUnit(watermarkColumnTimeUnit)
+        .streamingChangelogMode(streamingChangelogMode)
         .build();
   }
 
@@ -346,6 +354,7 @@ public class ScanContext implements Serializable {
         .maxAllowedPlanningFailures(maxAllowedPlanningFailures)
         .watermarkColumn(watermarkColumn)
         .watermarkColumnTimeUnit(watermarkColumnTimeUnit)
+        .streamingChangelogMode(streamingChangelogMode)
         .build();
   }
 
@@ -389,6 +398,8 @@ public class ScanContext implements Serializable {
     private String watermarkColumn = FlinkReadOptions.WATERMARK_COLUMN_OPTION.defaultValue();
     private TimeUnit watermarkColumnTimeUnit =
         FlinkReadOptions.WATERMARK_COLUMN_TIME_UNIT_OPTION.defaultValue();
+    private String streamingChangelogMode =
+        FlinkReadOptions.STREAMING_CHANGELOG_MODE_OPTION.defaultValue();
 
     private Builder() {}
 
@@ -532,6 +543,11 @@ public class ScanContext implements Serializable {
       return this;
     }
 
+    public Builder streamingChangelogMode(String newStreamingChangelogMode) {
+      this.streamingChangelogMode = newStreamingChangelogMode;
+      return this;
+    }
+
     public Builder resolveConfig(
         Table table, Map<String, String> readOptions, ReadableConfig readableConfig) {
       FlinkReadConf flinkReadConf = new FlinkReadConf(table, readOptions, readableConfig);
@@ -559,7 +575,8 @@ public class ScanContext implements Serializable {
           .maxPlanningSnapshotCount(flinkReadConf.maxPlanningSnapshotCount())
           .maxAllowedPlanningFailures(flinkReadConf.maxAllowedPlanningFailures())
           .watermarkColumn(flinkReadConf.watermarkColumn())
-          .watermarkColumnTimeUnit(flinkReadConf.watermarkColumnTimeUnit());
+          .watermarkColumnTimeUnit(flinkReadConf.watermarkColumnTimeUnit())
+          .streamingChangelogMode(flinkReadConf.streamingChangelogMode());
     }
 
     public ScanContext build() {
@@ -591,7 +608,8 @@ public class ScanContext implements Serializable {
           branch,
           tag,
           startTag,
-          endTag);
+          endTag,
+          streamingChangelogMode);
     }
   }
 }

@@ -91,6 +91,12 @@ public class BaseTable implements Table, HasTableOperations, Serializable {
   }
 
   @Override
+  public IncrementalDataScan newIncrementalDataScan() {
+    return new BaseIncrementalDataScan(
+        this, schema(), ImmutableTableScanContext.builder().metricsReporter(reporter).build());
+  }
+
+  @Override
   public Schema schema() {
     return ops.current().schema();
   }
