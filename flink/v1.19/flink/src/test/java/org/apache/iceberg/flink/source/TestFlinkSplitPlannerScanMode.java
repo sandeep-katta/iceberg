@@ -62,14 +62,14 @@ class TestFlinkSplitPlannerScanMode {
   }
 
   @Test
-  void testIncrementalDataScanWithChangelogMode() {
+  void testIncrementalChangelogScanWithChangelogMode() {
     ScanContext context =
         ScanContext.builder()
             .startSnapshotId(1L)
             .streamingChangelogMode(FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG)
             .build();
     assertThat(FlinkSplitPlanner.checkScanMode(context))
-        .isEqualTo(FlinkSplitPlanner.ScanMode.INCREMENTAL_DATA_SCAN);
+        .isEqualTo(FlinkSplitPlanner.ScanMode.INCREMENTAL_CHANGELOG_SCAN);
   }
 
   @Test

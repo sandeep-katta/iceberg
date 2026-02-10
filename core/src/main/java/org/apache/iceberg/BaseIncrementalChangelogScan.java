@@ -71,8 +71,13 @@ class BaseIncrementalChangelogScan
             .filter(manifest -> changelogSnapshotIds.contains(manifest.snapshotId()))
             .toSet();
 
+    Set<ManifestFile> deleteManifests =
+        FluentIterable.from(changelogSnapshots)
+            .transformAndConcat(snapshot -> snapshot.deleteManifests(table().io()))
+            .toSet();
+
     ManifestGroup manifestGroup =
-        new ManifestGroup(table().io(), newDataManifests, ImmutableList.of())
+        new ManifestGroup(table().io(), newDataManifests, deleteManifests)
             .specsById(table().specs())
             .caseSensitive(isCaseSensitive())
             .select(scanColumns())
@@ -105,11 +110,6 @@ class BaseIncrementalChangelogScan
 
     for (Snapshot snapshot : SnapshotUtil.ancestorsBetween(table(), toIdIncl, fromIdExcl)) {
       if (!snapshot.operation().equals(DataOperations.REPLACE)) {
-        if (!snapshot.deleteManifests(table().io()).isEmpty()) {
-          throw new UnsupportedOperationException(
-              "Delete files are currently not supported in changelog scans");
-        }
-
         changelogSnapshots.addFirst(snapshot);
       }
     }
@@ -134,7 +134,6 @@ class BaseIncrementalChangelogScan
   }
 
   private static class CreateDataFileChangeTasks implements CreateTasksFunction<ChangelogScanTask> {
-    private static final DeleteFile[] NO_DELETES = new DeleteFile[0];
 
     private final Map<Long, Integer> snapshotOrdinals;
 
@@ -152,6 +151,7 @@ class BaseIncrementalChangelogScan
             long commitSnapshotId = entry.snapshotId();
             int changeOrdinal = snapshotOrdinals.get(commitSnapshotId);
             DataFile dataFile = entry.file().copy(context.shouldKeepStats());
+            DeleteFile[] deletes = context.deletes().forEntry(entry);
 
             switch (entry.status()) {
               case ADDED:
@@ -159,7 +159,7 @@ class BaseIncrementalChangelogScan
                     changeOrdinal,
                     commitSnapshotId,
                     dataFile,
-                    NO_DELETES,
+                    deletes,
                     context.schemaAsString(),
                     context.specAsString(),
                     context.residuals());
@@ -169,7 +169,7 @@ class BaseIncrementalChangelogScan
                     changeOrdinal,
                     commitSnapshotId,
                     dataFile,
-                    NO_DELETES,
+                    deletes,
                     context.schemaAsString(),
                     context.specAsString(),
                     context.residuals());

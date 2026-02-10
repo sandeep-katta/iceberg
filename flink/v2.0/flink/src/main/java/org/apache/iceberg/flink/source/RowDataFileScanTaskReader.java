@@ -26,15 +26,12 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.StructLike;
 import org.apache.iceberg.avro.Avro;
-import org.apache.iceberg.data.DeleteFilter;
 import org.apache.iceberg.encryption.InputFilesDecryptor;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.flink.FlinkSchemaUtil;
 import org.apache.iceberg.flink.FlinkSourceFilter;
-import org.apache.iceberg.flink.RowDataWrapper;
 import org.apache.iceberg.flink.data.FlinkOrcReader;
 import org.apache.iceberg.flink.data.FlinkParquetReaders;
 import org.apache.iceberg.flink.data.FlinkPlannedAvroReader;
@@ -42,7 +39,6 @@ import org.apache.iceberg.flink.data.RowDataProjection;
 import org.apache.iceberg.flink.data.RowDataUtil;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.CloseableIterator;
-import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMappingParser;
 import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
@@ -210,34 +206,4 @@ public class RowDataFileScanTaskReader implements FileScanTaskReader<RowData> {
     return builder.build();
   }
 
-  private static class FlinkDeleteFilter extends DeleteFilter<RowData> {
-    private final RowType requiredRowType;
-    private final RowDataWrapper asStructLike;
-    private final InputFilesDecryptor inputFilesDecryptor;
-
-    FlinkDeleteFilter(
-        FileScanTask task,
-        Schema tableSchema,
-        Schema requestedSchema,
-        InputFilesDecryptor inputFilesDecryptor) {
-      super(task.file().location(), task.deletes(), tableSchema, requestedSchema);
-      this.requiredRowType = FlinkSchemaUtil.convert(requiredSchema());
-      this.asStructLike = new RowDataWrapper(requiredRowType, requiredSchema().asStruct());
-      this.inputFilesDecryptor = inputFilesDecryptor;
-    }
-
-    public RowType requiredRowType() {
-      return requiredRowType;
-    }
-
-    @Override
-    protected StructLike asStructLike(RowData row) {
-      return asStructLike.wrap(row);
-    }
-
-    @Override
-    protected InputFile getInputFile(String location) {
-      return inputFilesDecryptor.getInputFile(location);
-    }
-  }
 }

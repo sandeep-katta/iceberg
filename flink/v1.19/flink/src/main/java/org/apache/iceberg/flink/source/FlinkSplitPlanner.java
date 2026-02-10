@@ -23,12 +23,15 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import org.apache.flink.annotation.Internal;
+import org.apache.iceberg.ChangelogScanTask;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.IncrementalAppendScan;
+import org.apache.iceberg.IncrementalChangelogScan;
 import org.apache.iceberg.IncrementalDataScan;
 import org.apache.iceberg.IncrementalScan;
 import org.apache.iceberg.Scan;
+import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScan;
@@ -75,6 +78,11 @@ public class FlinkSplitPlanner {
   /** This returns splits for the FLIP-27 source */
   public static List<IcebergSourceSplit> planIcebergSourceSplits(
       Table table, ScanContext context, ExecutorService workerPool) {
+    ScanMode scanMode = checkScanMode(context);
+    if (scanMode == ScanMode.INCREMENTAL_CHANGELOG_SCAN) {
+      return planChangelogSplits(table, context, workerPool);
+    }
+
     try (CloseableIterable<CombinedScanTask> tasksIterable =
         planTasks(table, context, workerPool)) {
       return Lists.newArrayList(
@@ -156,7 +164,8 @@ public class FlinkSplitPlanner {
   enum ScanMode {
     BATCH,
     INCREMENTAL_APPEND_SCAN,
-    INCREMENTAL_DATA_SCAN
+    INCREMENTAL_DATA_SCAN,
+    INCREMENTAL_CHANGELOG_SCAN
   }
 
   @VisibleForTesting
@@ -169,13 +178,74 @@ public class FlinkSplitPlanner {
 
     if (hasIncrementalRange) {
       String changelogMode = context.streamingChangelogMode();
-      if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_UPSERT.equalsIgnoreCase(changelogMode)
-          || FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG.equalsIgnoreCase(changelogMode)) {
+      if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG.equalsIgnoreCase(changelogMode)) {
+        return ScanMode.INCREMENTAL_CHANGELOG_SCAN;
+      } else if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_UPSERT.equalsIgnoreCase(changelogMode)) {
         return ScanMode.INCREMENTAL_DATA_SCAN;
       }
       return ScanMode.INCREMENTAL_APPEND_SCAN;
     } else {
       return ScanMode.BATCH;
+    }
+  }
+
+  private static List<IcebergSourceSplit> planChangelogSplits(
+      Table table, ScanContext context, ExecutorService workerPool) {
+    IncrementalChangelogScan scan = table.newIncrementalChangelogScan();
+    scan =
+        scan.caseSensitive(context.caseSensitive())
+            .project(context.project())
+            .planWith(workerPool);
+
+    if (context.filters() != null) {
+      for (Expression filter : context.filters()) {
+        scan = scan.filter(filter);
+      }
+    }
+
+    scan = scan.option(TableProperties.SPLIT_SIZE, context.splitSize().toString());
+    scan = scan.option(TableProperties.SPLIT_LOOKBACK, context.splitLookback().toString());
+    scan =
+        scan.option(TableProperties.SPLIT_OPEN_FILE_COST, context.splitOpenFileCost().toString());
+
+    if (context.startTag() != null) {
+      Preconditions.checkArgument(
+          table.snapshot(context.startTag()) != null,
+          "Cannot find snapshot with tag %s",
+          context.startTag());
+      scan = scan.fromSnapshotExclusive(table.snapshot(context.startTag()).snapshotId());
+    }
+
+    if (context.startSnapshotId() != null) {
+      Preconditions.checkArgument(
+          context.startTag() == null, "START_SNAPSHOT_ID and START_TAG cannot both be set");
+      scan = scan.fromSnapshotExclusive(context.startSnapshotId());
+    }
+
+    if (context.endTag() != null) {
+      Preconditions.checkArgument(
+          table.snapshot(context.endTag()) != null,
+          "Cannot find snapshot with tag %s",
+          context.endTag());
+      scan = scan.toSnapshot(table.snapshot(context.endTag()).snapshotId());
+    }
+
+    if (context.endSnapshotId() != null) {
+      Preconditions.checkArgument(
+          context.endTag() == null, "END_SNAPSHOT_ID and END_TAG cannot both be set");
+      scan = scan.toSnapshot(context.endSnapshotId());
+    }
+
+    try (CloseableIterable<ScanTaskGroup<ChangelogScanTask>> taskGroups = scan.planTasks()) {
+      return Lists.newArrayList(
+          CloseableIterable.transform(
+              taskGroups,
+              taskGroup -> {
+                List<ChangelogScanTask> tasks = Lists.newArrayList(taskGroup.tasks());
+                return IcebergSourceSplit.fromChangelogTasks(tasks);
+              }));
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to process changelog task iterable", e);
     }
   }
 

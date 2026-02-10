@@ -248,16 +248,30 @@ public class TestBaseIncrementalChangelogScan
   }
 
   @TestTemplate
-  public void testDeleteFilesAreNotSupported() {
-    assumeThat(formatVersion).isEqualTo(2);
+  public void testDeleteFilesAreSupported() {
+    assumeThat(formatVersion).isGreaterThanOrEqualTo(2);
 
     table.newFastAppend().appendFile(FILE_A2).appendFile(FILE_B).commit();
 
-    table.newRowDelta().addDeletes(FILE_A2_DELETES).commit();
+    Snapshot snap1 = table.currentSnapshot();
 
-    assertThatThrownBy(() -> plan(newScan()))
-        .isInstanceOf(UnsupportedOperationException.class)
-        .hasMessage("Delete files are currently not supported in changelog scans");
+    table.newRowDelta().addDeletes(fileA2Deletes()).commit();
+
+    List<ChangelogScanTask> tasks = plan(newScan());
+
+    // Should have tasks for the data files added in snap1
+    // The delete file from snap2 should be included as a delete for the relevant data file
+    assertThat(tasks).as("Must have 2 tasks").hasSize(2);
+
+    AddedRowsScanTask t1 = (AddedRowsScanTask) tasks.get(0);
+    assertThat(t1.commitSnapshotId()).as("Snapshot must match").isEqualTo(snap1.snapshotId());
+    assertThat(t1.file().location()).as("Data file must match").isEqualTo(FILE_A2.location());
+    assertThat(t1.deletes()).as("Must have delete file").hasSize(1);
+
+    AddedRowsScanTask t2 = (AddedRowsScanTask) tasks.get(1);
+    assertThat(t2.commitSnapshotId()).as("Snapshot must match").isEqualTo(snap1.snapshotId());
+    assertThat(t2.file().location()).as("Data file must match").isEqualTo(FILE_B.location());
+    assertThat(t2.deletes()).as("Must be no deletes").isEmpty();
   }
 
   // plans tasks and reorders them to have deterministic order

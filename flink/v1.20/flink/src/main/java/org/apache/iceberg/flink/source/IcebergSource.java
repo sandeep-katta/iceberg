@@ -64,6 +64,7 @@ import org.apache.iceberg.flink.source.enumerator.ContinuousSplitPlannerImpl;
 import org.apache.iceberg.flink.source.enumerator.IcebergEnumeratorState;
 import org.apache.iceberg.flink.source.enumerator.IcebergEnumeratorStateSerializer;
 import org.apache.iceberg.flink.source.enumerator.StaticIcebergEnumerator;
+import org.apache.iceberg.flink.source.reader.ChangelogRowDataReaderFunction;
 import org.apache.iceberg.flink.source.reader.ColumnStatsWatermarkExtractor;
 import org.apache.iceberg.flink.source.reader.ConverterReaderFunction;
 import org.apache.iceberg.flink.source.reader.IcebergSourceReader;
@@ -671,6 +672,19 @@ public class IcebergSource<T> implements Source<T, IcebergSourceSplit, IcebergEn
                 flinkConfig, table.schema(), context.project(), table.io(), table.encryption());
         return (ReaderFunction<T>) rowDataReaderFunction;
       } else {
+        String changelogMode = context.streamingChangelogMode();
+        if (FlinkReadOptions.STREAMING_CHANGELOG_MODE_CHANGELOG.equalsIgnoreCase(changelogMode)) {
+          return (ReaderFunction<T>)
+              new ChangelogRowDataReaderFunction(
+                  flinkConfig,
+                  table.schema(),
+                  context.project(),
+                  context.nameMapping(),
+                  context.caseSensitive(),
+                  table.io(),
+                  table.encryption());
+        }
+
         if (converter == null) {
           return (ReaderFunction<T>)
               new RowDataReaderFunction(

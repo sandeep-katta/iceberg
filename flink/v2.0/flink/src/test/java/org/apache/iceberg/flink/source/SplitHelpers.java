@@ -30,14 +30,17 @@ import java.util.stream.Collectors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.BaseCombinedScanTask;
 import org.apache.iceberg.BaseFileScanTask;
+import org.apache.iceberg.ChangelogScanTask;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileMetadata;
 import org.apache.iceberg.FileScanTask;
+import org.apache.iceberg.IncrementalChangelogScan;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.PartitionSpecParser;
 import org.apache.iceberg.SchemaParser;
+import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.data.GenericAppenderHelper;
@@ -47,6 +50,8 @@ import org.apache.iceberg.expressions.ResidualEvaluator;
 import org.apache.iceberg.flink.TestFixtures;
 import org.apache.iceberg.flink.source.split.IcebergSourceSplit;
 import org.apache.iceberg.hadoop.HadoopCatalog;
+import org.apache.iceberg.io.CloseableIterable;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.util.ThreadPools;
@@ -196,5 +201,85 @@ public class SplitHelpers {
               combinedScanTask, split.fileOffset(), split.recordOffset()));
     }
     return icebergSourceSplitsWithMockDeleteFiles;
+  }
+
+  /**
+   * Creates a list of changelog-based IcebergSourceSplit instances from a transient Hadoop table.
+   *
+   * <p>Steps:
+   * <li>Create a v2 Hadoop table
+   * <li>Append two data files (snap1)
+   * <li>Overwrite: add a new file and delete an old file (snap2)
+   * <li>Run IncrementalChangelogScan from snap1 to snap2 to produce ChangelogScanTasks
+   * <li>Wrap tasks in IcebergSourceSplit.fromChangelogTasks()
+   *
+   * @param temporaryFolder Folder to place the data in
+   * @return list of changelog splits containing AddedRowsScanTask and DeletedDataFileScanTask
+   */
+  public static List<IcebergSourceSplit> createChangelogSplitsFromTransientHadoopTable(
+      Path temporaryFolder) throws Exception {
+    final File warehouseFile = File.createTempFile("junit", null, temporaryFolder.toFile());
+    assertThat(warehouseFile.delete()).isTrue();
+    final String warehouse = "file:" + warehouseFile;
+    Configuration hadoopConf = new Configuration();
+    final HadoopCatalog catalog = new HadoopCatalog(hadoopConf, warehouse);
+    ImmutableMap<String, String> properties =
+        ImmutableMap.of(TableProperties.FORMAT_VERSION, "2");
+    try {
+      final Table table =
+          catalog.createTable(
+              TestFixtures.TABLE_IDENTIFIER,
+              TestFixtures.SCHEMA,
+              PartitionSpec.unpartitioned(),
+              null,
+              properties);
+      final GenericAppenderHelper dataAppender =
+          new GenericAppenderHelper(table, FileFormat.PARQUET, temporaryFolder);
+
+      // Append two files (snap1)
+      List<Record> records1 = RandomGenericData.generate(TestFixtures.SCHEMA, 2, 0);
+      dataAppender.appendToTable(records1);
+      List<Record> records2 = RandomGenericData.generate(TestFixtures.SCHEMA, 2, 1);
+      dataAppender.appendToTable(records2);
+      Snapshot snap1 = table.currentSnapshot();
+
+      // Overwrite: add a new file and delete an existing file (snap2)
+      // This produces both AddedRowsScanTask and DeletedDataFileScanTask
+      List<Record> records3 = RandomGenericData.generate(TestFixtures.SCHEMA, 2, 2);
+      dataAppender.appendToTable(records3);
+      Snapshot appendSnap = table.currentSnapshot();
+
+      // Get the file we just appended and the first file to create an overwrite
+      org.apache.iceberg.DataFile addedFile =
+          appendSnap.addedDataFiles(table.io()).iterator().next();
+      org.apache.iceberg.DataFile firstFile =
+          table.newScan().planFiles().iterator().next().file();
+
+      // Revert the append and do an overwrite instead
+      table.manageSnapshots().rollbackTo(snap1.snapshotId()).commit();
+
+      table.newOverwrite().addFile(addedFile).deleteFile(firstFile).commit();
+      Snapshot snap2 = table.currentSnapshot();
+
+      // Scan for changelog tasks between snap1 and snap2
+      IncrementalChangelogScan scan =
+          table
+              .newIncrementalChangelogScan()
+              .fromSnapshotExclusive(snap1.snapshotId())
+              .toSnapshot(snap2.snapshotId());
+
+      List<ChangelogScanTask> changelogTasks;
+      try (CloseableIterable<ChangelogScanTask> tasks = scan.planFiles()) {
+        changelogTasks = Lists.newArrayList(tasks);
+      }
+
+      assertThat(changelogTasks).isNotEmpty();
+
+      // Wrap all changelog tasks into a single split
+      return ImmutableList.of(IcebergSourceSplit.fromChangelogTasks(changelogTasks));
+    } finally {
+      catalog.dropTable(TestFixtures.TABLE_IDENTIFIER);
+      catalog.close();
+    }
   }
 }

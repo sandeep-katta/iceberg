@@ -30,6 +30,8 @@ import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
+import org.apache.iceberg.ChangelogScanTask;
+import org.apache.iceberg.ContentScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.flink.source.split.IcebergSourceSplit;
 import org.apache.iceberg.flink.source.split.SerializableComparator;
@@ -144,6 +146,12 @@ class IcebergSourceSplitReader<T> implements SplitReader<RecordAndPosition<T>, I
   }
 
   private long calculateBytes(IcebergSourceSplit split) {
+    if (split.isChangelogSplit()) {
+      return split.changelogTasks().stream()
+          .filter(task -> task instanceof ContentScanTask)
+          .map(task -> ((ContentScanTask<?>) task).length())
+          .reduce(0L, Long::sum);
+    }
     return split.task().files().stream().map(FileScanTask::length).reduce(0L, Long::sum);
   }
 

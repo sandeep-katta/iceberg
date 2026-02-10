@@ -33,6 +33,10 @@ public class InputFilesDecryptor {
 
   private final Map<String, InputFile> decryptedInputFiles;
 
+  public InputFilesDecryptor(Map<String, InputFile> decryptedFiles) {
+    this.decryptedInputFiles = Collections.unmodifiableMap(decryptedFiles);
+  }
+
   public InputFilesDecryptor(
       CombinedScanTask combinedTask, FileIO io, EncryptionManager encryption) {
     Map<String, ByteBuffer> keyMetadata = Maps.newHashMap();

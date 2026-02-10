@@ -110,6 +110,17 @@ public class TestBase {
           .withPartitionPath("data_bucket=0")
           .withRecordCount(1)
           .build();
+  static final DeleteFile FILE_A2_DV =
+      FileMetadata.deleteFileBuilder(SPEC)
+          .ofPositionDeletes()
+          .withPath("/path/to/data-a2-deletes.puffin")
+          .withFileSizeInBytes(10)
+          .withPartitionPath("data_bucket=0")
+          .withRecordCount(1)
+          .withReferencedDataFile(FILE_A2.location())
+          .withContentOffset(4)
+          .withContentSizeInBytes(6)
+          .build();
   public static final DataFile FILE_B =
       DataFiles.builder(SPEC)
           .withPath("/path/to/data-b.parquet")
@@ -679,6 +690,10 @@ public class TestBase {
 
   protected DeleteFile fileBDeletes() {
     return formatVersion >= 3 ? FILE_B_DV : FILE_B_DELETES;
+  }
+
+  protected DeleteFile fileA2Deletes() {
+    return formatVersion >= 3 ? FILE_A2_DV : FILE_A2_DELETES;
   }
 
   protected DeleteFile newDeletes(DataFile dataFile) {

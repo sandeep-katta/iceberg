@@ -30,11 +30,14 @@ import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.iceberg.BaseCombinedScanTask;
+import org.apache.iceberg.ChangelogScanTask;
+import org.apache.iceberg.ChangelogScanTaskParser;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.ScanTaskParser;
 import org.apache.iceberg.relocated.com.google.common.base.MoreObjects;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 
@@ -44,7 +47,8 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
   private static final ThreadLocal<DataOutputSerializer> SERIALIZER_CACHE =
       ThreadLocal.withInitial(() -> new DataOutputSerializer(1024));
 
-  private final CombinedScanTask task;
+  @Nullable private final CombinedScanTask task;
+  @Nullable private final List<ChangelogScanTask> changelogTasks;
 
   private int fileOffset;
   private long recordOffset;
@@ -53,8 +57,13 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
   // Caching the byte representation makes repeated serialization cheap.
   @Nullable private transient byte[] serializedBytesCache;
 
-  private IcebergSourceSplit(CombinedScanTask task, int fileOffset, long recordOffset) {
+  private IcebergSourceSplit(
+      @Nullable CombinedScanTask task,
+      @Nullable List<ChangelogScanTask> changelogTasks,
+      int fileOffset,
+      long recordOffset) {
     this.task = task;
+    this.changelogTasks = changelogTasks;
     this.fileOffset = fileOffset;
     this.recordOffset = recordOffset;
   }
@@ -65,11 +74,33 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
 
   public static IcebergSourceSplit fromCombinedScanTask(
       CombinedScanTask combinedScanTask, int fileOffset, long recordOffset) {
-    return new IcebergSourceSplit(combinedScanTask, fileOffset, recordOffset);
+    return new IcebergSourceSplit(combinedScanTask, null, fileOffset, recordOffset);
+  }
+
+  public static IcebergSourceSplit fromChangelogTasks(List<ChangelogScanTask> changelogTasks) {
+    return fromChangelogTasks(changelogTasks, 0, 0L);
+  }
+
+  public static IcebergSourceSplit fromChangelogTasks(
+      List<ChangelogScanTask> changelogTasks, int fileOffset, long recordOffset) {
+    return new IcebergSourceSplit(null, ImmutableList.copyOf(changelogTasks), fileOffset,
+        recordOffset);
+  }
+
+  public boolean isChangelogSplit() {
+    return changelogTasks != null;
   }
 
   public CombinedScanTask task() {
+    Preconditions.checkState(!isChangelogSplit(),
+        "Cannot get CombinedScanTask from a changelog split");
     return task;
+  }
+
+  public List<ChangelogScanTask> changelogTasks() {
+    Preconditions.checkState(isChangelogSplit(),
+        "Cannot get changelog tasks from a regular split");
+    return changelogTasks;
   }
 
   public int fileOffset() {
@@ -82,6 +113,11 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
 
   @Override
   public String splitId() {
+    if (isChangelogSplit()) {
+      return MoreObjects.toStringHelper(this)
+          .add("changelogTasks", changelogTasks.size())
+          .toString();
+    }
     return MoreObjects.toStringHelper(this).add("files", toString(task.files())).toString();
   }
 
@@ -94,6 +130,13 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
 
   @Override
   public String toString() {
+    if (isChangelogSplit()) {
+      return MoreObjects.toStringHelper(this)
+          .add("changelogTasks", changelogTasks.size())
+          .add("fileOffset", fileOffset)
+          .add("recordOffset", recordOffset)
+          .toString();
+    }
     return MoreObjects.toStringHelper(this)
         .add("files", toString(task.files()))
         .add("fileOffset", fileOffset)
@@ -136,7 +179,41 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
   }
 
   byte[] serializeV3() throws IOException {
-    return serialize(3);
+    if (serializedBytesCache == null) {
+      DataOutputSerializer out = SERIALIZER_CACHE.get();
+
+      out.writeInt(fileOffset);
+      out.writeLong(recordOffset);
+
+      if (isChangelogSplit()) {
+        // Use negative taskCount as discriminator for changelog splits
+        out.writeInt(-changelogTasks.size());
+
+        for (ChangelogScanTask changelogTask : changelogTasks) {
+          String taskJson = ChangelogScanTaskParser.toJson(changelogTask);
+          SerializerHelper.writeLongUTF(out, taskJson);
+        }
+      } else {
+        Collection<FileScanTask> fileScanTasks = task.tasks();
+        Preconditions.checkArgument(
+            fileOffset >= 0 && fileOffset < fileScanTasks.size(),
+            "Invalid file offset: %s. Should be within the range of [0, %s)",
+            fileOffset,
+            fileScanTasks.size());
+
+        out.writeInt(fileScanTasks.size());
+
+        for (FileScanTask fileScanTask : fileScanTasks) {
+          String taskJson = ScanTaskParser.toJson(fileScanTask);
+          SerializerHelper.writeLongUTF(out, taskJson);
+        }
+      }
+
+      serializedBytesCache = out.getCopyOfBuffer();
+      out.clear();
+    }
+
+    return serializedBytesCache;
   }
 
   private byte[] serialize(int version) throws IOException {
@@ -186,7 +263,33 @@ public class IcebergSourceSplit implements SourceSplit, Serializable {
 
   static IcebergSourceSplit deserializeV3(byte[] serialized, boolean caseSensitive)
       throws IOException {
-    return deserialize(serialized, caseSensitive, 3);
+    DataInputDeserializer in = new DataInputDeserializer(serialized);
+    int fileOffset = in.readInt();
+    long recordOffset = in.readLong();
+    int taskCount = in.readInt();
+
+    if (taskCount < 0) {
+      // Negative taskCount indicates a changelog split
+      int changelogTaskCount = -taskCount;
+      List<ChangelogScanTask> tasks = Lists.newArrayListWithCapacity(changelogTaskCount);
+      for (int i = 0; i < changelogTaskCount; ++i) {
+        String taskJson = SerializerHelper.readLongUTF(in);
+        ChangelogScanTask task = ChangelogScanTaskParser.fromJson(taskJson, caseSensitive);
+        tasks.add(task);
+      }
+
+      return IcebergSourceSplit.fromChangelogTasks(tasks, fileOffset, recordOffset);
+    } else {
+      List<FileScanTask> tasks = Lists.newArrayListWithCapacity(taskCount);
+      for (int i = 0; i < taskCount; ++i) {
+        String taskJson = SerializerHelper.readLongUTF(in);
+        FileScanTask task = ScanTaskParser.fromJson(taskJson, caseSensitive);
+        tasks.add(task);
+      }
+
+      CombinedScanTask combinedScanTask = new BaseCombinedScanTask(tasks);
+      return IcebergSourceSplit.fromCombinedScanTask(combinedScanTask, fileOffset, recordOffset);
+    }
   }
 
   private static IcebergSourceSplit deserialize(

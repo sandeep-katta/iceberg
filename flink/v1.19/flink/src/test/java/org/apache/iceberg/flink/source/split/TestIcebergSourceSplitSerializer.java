@@ -24,6 +24,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.apache.iceberg.AddedRowsScanTask;
+import org.apache.iceberg.ChangelogScanTask;
+import org.apache.iceberg.ContentScanTask;
+import org.apache.iceberg.DeletedDataFileScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.flink.source.SplitHelpers;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
@@ -163,21 +167,109 @@ public class TestIcebergSourceSplitSerializer {
     }
   }
 
+  @Test
+  public void testChangelogSplitV3() throws Exception {
+    final List<IcebergSourceSplit> splits =
+        SplitHelpers.createChangelogSplitsFromTransientHadoopTable(temporaryFolder);
+    for (IcebergSourceSplit split : splits) {
+      assertThat(split.isChangelogSplit()).isTrue();
+      byte[] result = split.serializeV3();
+      IcebergSourceSplit deserialized = IcebergSourceSplit.deserializeV3(result, true);
+      assertSplitEquals(split, deserialized);
+    }
+  }
+
+  @Test
+  public void testChangelogSplitWithCheckpointedPosition() throws Exception {
+    final List<IcebergSourceSplit> splits =
+        SplitHelpers.createChangelogSplitsFromTransientHadoopTable(temporaryFolder);
+    for (IcebergSourceSplit split : splits) {
+      // Serialize with non-zero position
+      IcebergSourceSplit splitWithPosition =
+          IcebergSourceSplit.fromChangelogTasks(split.changelogTasks(), 1, 100L);
+      byte[] result = splitWithPosition.serializeV3();
+      IcebergSourceSplit deserialized = IcebergSourceSplit.deserializeV3(result, true);
+      assertSplitEquals(splitWithPosition, deserialized);
+    }
+  }
+
+  @Test
+  public void testChangelogSplitCacheInvalidation() throws Exception {
+    final List<IcebergSourceSplit> splits =
+        SplitHelpers.createChangelogSplitsFromTransientHadoopTable(temporaryFolder);
+    for (IcebergSourceSplit split : splits) {
+      byte[] result = serializer.serialize(split);
+      IcebergSourceSplit deserialized = serializer.deserialize(serializer.getVersion(), result);
+      assertSplitEquals(split, deserialized);
+
+      byte[] cachedResult = serializer.serialize(split);
+      assertThat(cachedResult).isSameAs(result);
+
+      split.updatePosition(1, 50);
+      byte[] resultAfterUpdate = serializer.serialize(split);
+      assertThat(resultAfterUpdate).isNotSameAs(cachedResult);
+      IcebergSourceSplit deserialized2 =
+          serializer.deserialize(serializer.getVersion(), resultAfterUpdate);
+      assertSplitEquals(split, deserialized2);
+    }
+  }
+
   private void assertSplitEquals(IcebergSourceSplit expected, IcebergSourceSplit actual) {
-    List<FileScanTask> expectedTasks = Lists.newArrayList(expected.task().tasks().iterator());
-    List<FileScanTask> actualTasks = Lists.newArrayList(actual.task().tasks().iterator());
-    assertThat(actualTasks).hasSameSizeAs(expectedTasks);
-    for (int i = 0; i < expectedTasks.size(); ++i) {
-      FileScanTask expectedTask = expectedTasks.get(i);
-      FileScanTask actualTask = actualTasks.get(i);
-      assertThat(actualTask.file().location()).isEqualTo(expectedTask.file().location());
-      assertThat(actualTask.sizeBytes()).isEqualTo(expectedTask.sizeBytes());
-      assertThat(actualTask.filesCount()).isEqualTo(expectedTask.filesCount());
-      assertThat(actualTask.start()).isEqualTo(expectedTask.start());
-      assertThat(actualTask.length()).isEqualTo(expectedTask.length());
+    assertThat(actual.isChangelogSplit()).isEqualTo(expected.isChangelogSplit());
+
+    if (expected.isChangelogSplit()) {
+      assertChangelogSplitEquals(expected, actual);
+    } else {
+      List<FileScanTask> expectedTasks = Lists.newArrayList(expected.task().tasks().iterator());
+      List<FileScanTask> actualTasks = Lists.newArrayList(actual.task().tasks().iterator());
+      assertThat(actualTasks).hasSameSizeAs(expectedTasks);
+      for (int i = 0; i < expectedTasks.size(); ++i) {
+        FileScanTask expectedTask = expectedTasks.get(i);
+        FileScanTask actualTask = actualTasks.get(i);
+        assertThat(actualTask.file().location()).isEqualTo(expectedTask.file().location());
+        assertThat(actualTask.sizeBytes()).isEqualTo(expectedTask.sizeBytes());
+        assertThat(actualTask.filesCount()).isEqualTo(expectedTask.filesCount());
+        assertThat(actualTask.start()).isEqualTo(expectedTask.start());
+        assertThat(actualTask.length()).isEqualTo(expectedTask.length());
+      }
     }
 
     assertThat(actual.fileOffset()).isEqualTo(expected.fileOffset());
     assertThat(actual.recordOffset()).isEqualTo(expected.recordOffset());
+  }
+
+  private void assertChangelogSplitEquals(
+      IcebergSourceSplit expected, IcebergSourceSplit actual) {
+    List<ChangelogScanTask> expectedTasks = expected.changelogTasks();
+    List<ChangelogScanTask> actualTasks = actual.changelogTasks();
+    assertThat(actualTasks).hasSameSizeAs(expectedTasks);
+    for (int i = 0; i < expectedTasks.size(); ++i) {
+      ChangelogScanTask expectedTask = expectedTasks.get(i);
+      ChangelogScanTask actualTask = actualTasks.get(i);
+      assertThat(actualTask.changeOrdinal()).isEqualTo(expectedTask.changeOrdinal());
+      assertThat(actualTask.commitSnapshotId()).isEqualTo(expectedTask.commitSnapshotId());
+      assertThat(actualTask.getClass()).isEqualTo(expectedTask.getClass());
+
+      if (expectedTask instanceof ContentScanTask && actualTask instanceof ContentScanTask) {
+        ContentScanTask<?> expectedContent = (ContentScanTask<?>) expectedTask;
+        ContentScanTask<?> actualContent = (ContentScanTask<?>) actualTask;
+        assertThat(actualContent.file().location()).isEqualTo(expectedContent.file().location());
+        assertThat(actualContent.start()).isEqualTo(expectedContent.start());
+        assertThat(actualContent.length()).isEqualTo(expectedContent.length());
+      }
+
+      if (expectedTask instanceof AddedRowsScanTask) {
+        AddedRowsScanTask expectedAdded = (AddedRowsScanTask) expectedTask;
+        AddedRowsScanTask actualAdded = (AddedRowsScanTask) actualTask;
+        assertThat(actualAdded.deletes()).hasSameSizeAs(expectedAdded.deletes());
+      }
+
+      if (expectedTask instanceof DeletedDataFileScanTask) {
+        DeletedDataFileScanTask expectedDeleted = (DeletedDataFileScanTask) expectedTask;
+        DeletedDataFileScanTask actualDeleted = (DeletedDataFileScanTask) actualTask;
+        assertThat(actualDeleted.existingDeletes())
+            .hasSameSizeAs(expectedDeleted.existingDeletes());
+      }
+    }
   }
 }

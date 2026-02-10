@@ -49,6 +49,17 @@ public class DataIterator<T> implements CloseableIterator<T> {
   private int fileOffset;
   private long recordOffset;
 
+  /** Protected constructor for subclasses that manage their own iteration state. */
+  protected DataIterator() {
+    this.fileScanTaskReader = null;
+    this.inputFilesDecryptor = null;
+    this.combinedTask = null;
+    this.tasks = null;
+    this.currentIterator = CloseableIterator.empty();
+    this.fileOffset = -1;
+    this.recordOffset = 0L;
+  }
+
   public DataIterator(
       FileScanTaskReader<T> fileScanTaskReader,
       CombinedScanTask task,
