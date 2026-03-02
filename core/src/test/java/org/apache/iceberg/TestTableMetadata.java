@@ -53,6 +53,7 @@ import java.util.SortedSet;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.apache.iceberg.ClusteringSpec;
 import org.apache.iceberg.TableMetadata.MetadataLogEntry;
 import org.apache.iceberg.TableMetadata.SnapshotLogEntry;
 import org.apache.iceberg.exceptions.ValidationException;
@@ -190,6 +191,7 @@ public class TestTableMetadata {
             SPEC_5.lastAssignedFieldId(),
             3,
             ImmutableList.of(SORT_ORDER_3),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -295,6 +297,7 @@ public class TestTableMetadata {
             spec.lastAssignedFieldId(),
             TableMetadata.INITIAL_SORT_ORDER_ID,
             ImmutableList.of(sortOrder),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -419,6 +422,7 @@ public class TestTableMetadata {
                     SPEC_5.lastAssignedFieldId(),
                     3,
                     ImmutableList.of(SORT_ORDER_3),
+                    ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                     ImmutableMap.of("property", "value"),
                     currentSnapshotId,
                     Arrays.asList(previousSnapshot, currentSnapshot),
@@ -467,6 +471,7 @@ public class TestTableMetadata {
                     SPEC_5.lastAssignedFieldId(),
                     3,
                     ImmutableList.of(SORT_ORDER_3),
+                    ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                     ImmutableMap.of("property", "value"),
                     -1,
                     ImmutableList.of(snapshot),
@@ -509,6 +514,7 @@ public class TestTableMetadata {
                     SPEC_5.lastAssignedFieldId(),
                     3,
                     ImmutableList.of(SORT_ORDER_3),
+                    ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                     ImmutableMap.of("property", "value"),
                     -1,
                     ImmutableList.of(),
@@ -628,6 +634,7 @@ public class TestTableMetadata {
             SPEC_5.lastAssignedFieldId(),
             3,
             ImmutableList.of(SORT_ORDER_3),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -719,6 +726,7 @@ public class TestTableMetadata {
             SPEC_5.lastAssignedFieldId(),
             3,
             ImmutableList.of(SORT_ORDER_3),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -825,6 +833,7 @@ public class TestTableMetadata {
             SPEC_5.lastAssignedFieldId(),
             3,
             ImmutableList.of(SORT_ORDER_3),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -935,6 +944,7 @@ public class TestTableMetadata {
             SPEC_5.lastAssignedFieldId(),
             SortOrder.unsorted().orderId(),
             ImmutableList.of(SortOrder.unsorted()),
+            ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
             ImmutableMap.of("property", "value"),
             currentSnapshotId,
             Arrays.asList(previousSnapshot, currentSnapshot),
@@ -983,6 +993,7 @@ public class TestTableMetadata {
                     SPEC_5.lastAssignedFieldId(),
                     3,
                     ImmutableList.of(SORT_ORDER_3),
+                    ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                     ImmutableMap.of(),
                     -1L,
                     ImmutableList.of(),
@@ -1020,6 +1031,7 @@ public class TestTableMetadata {
                     SPEC_5.lastAssignedFieldId(),
                     3,
                     ImmutableList.of(SORT_ORDER_3),
+                    ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                     ImmutableMap.of(),
                     -1L,
                     ImmutableList.of(),
@@ -1068,6 +1080,7 @@ public class TestTableMetadata {
                 SPEC_5.lastAssignedFieldId(),
                 3,
                 ImmutableList.of(SORT_ORDER_3),
+                ClusteringSpec.UNPARTITIONED_SPEC_ID, ImmutableList.of(),
                 ImmutableMap.of(),
                 -1L,
                 ImmutableList.of(),

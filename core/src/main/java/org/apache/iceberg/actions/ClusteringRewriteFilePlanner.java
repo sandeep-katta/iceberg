@@ -80,6 +80,11 @@ public class ClusteringRewriteFilePlanner
     super(table, filter);
   }
 
+  public ClusteringRewriteFilePlanner(
+      Table table, Expression filter, Long snapshotId, boolean caseSensitive) {
+    super(table, filter, snapshotId, caseSensitive);
+  }
+
   @Override
   public Set<String> validOptions() {
     return ImmutableSet.<String>builder()

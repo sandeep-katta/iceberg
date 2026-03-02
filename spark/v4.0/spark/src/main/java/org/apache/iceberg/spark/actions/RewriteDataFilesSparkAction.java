@@ -29,12 +29,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
+import org.apache.iceberg.ClusteringField;
+import org.apache.iceberg.ClusteringSpec;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.SortOrder;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.actions.BinPackRewriteFilePlanner;
+import org.apache.iceberg.actions.ClusteringRewriteFilePlanner;
 import org.apache.iceberg.actions.FileRewritePlan;
 import org.apache.iceberg.actions.FileRewriteRunner;
 import org.apache.iceberg.actions.ImmutableRewriteDataFiles;
@@ -96,6 +100,7 @@ public class RewriteDataFilesSparkAction
   private boolean removeDanglingDeletes;
   private boolean useStartingSequenceNumber;
   private boolean caseSensitive;
+  private boolean clusterMode = false;
   private BinPackRewriteFilePlanner planner = null;
   private FileRewriteRunner<FileGroupInfo, FileScanTask, DataFile, RewriteFileGroup> runner = null;
 
@@ -141,6 +146,36 @@ public class RewriteDataFilesSparkAction
   public RewriteDataFilesSparkAction zOrder(String... columnNames) {
     ensureRunnerNotSet();
     this.runner = new SparkZOrderFileRewriteRunner(spark(), table, Arrays.asList(columnNames));
+    return this;
+  }
+
+  @Override
+  public RewriteDataFilesSparkAction cluster() {
+    ensureRunnerNotSet();
+    ClusteringSpec spec = table.clusteringSpec();
+    Preconditions.checkArgument(
+        spec != null && !spec.fields().isEmpty(),
+        "Cannot use CLUSTER strategy: table '%s' has no clustering spec. "
+            + "Set one with updateClusteringSpec().",
+        table.name());
+
+    List<String> colNames =
+        spec.fields().stream().map(ClusteringField::name).collect(Collectors.toList());
+
+    String curve =
+        table
+            .properties()
+            .getOrDefault(
+                TableProperties.WRITE_CLUSTERING_CURVE,
+                TableProperties.WRITE_CLUSTERING_CURVE_ZORDER);
+
+    if (TableProperties.WRITE_CLUSTERING_CURVE_HILBERT.equalsIgnoreCase(curve)) {
+      this.runner = new SparkHilbertFileRewriteRunner(spark(), table, colNames);
+    } else {
+      this.runner = new SparkZOrderFileRewriteRunner(spark(), table, colNames);
+    }
+
+    this.clusterMode = true;
     return this;
   }
 
@@ -192,10 +227,17 @@ public class RewriteDataFilesSparkAction
   }
 
   private void init(long startingSnapshotId) {
-    this.planner =
-        runner instanceof SparkShufflingFileRewriteRunner
-            ? new SparkShufflingDataRewritePlanner(table, filter, startingSnapshotId, caseSensitive)
-            : new BinPackRewriteFilePlanner(table, filter, startingSnapshotId, caseSensitive);
+    if (clusterMode) {
+      // Liquid clustering: use the sealed-cube-aware planner regardless of runner type
+      this.planner =
+          new ClusteringRewriteFilePlanner(table, filter, startingSnapshotId, caseSensitive);
+    } else if (runner instanceof SparkShufflingFileRewriteRunner) {
+      this.planner =
+          new SparkShufflingDataRewritePlanner(table, filter, startingSnapshotId, caseSensitive);
+    } else {
+      this.planner =
+          new BinPackRewriteFilePlanner(table, filter, startingSnapshotId, caseSensitive);
+    }
 
     // Default to BinPack if no strategy selected
     if (this.runner == null) {
