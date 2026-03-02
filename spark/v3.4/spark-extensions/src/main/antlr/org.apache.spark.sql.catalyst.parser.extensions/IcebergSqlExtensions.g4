@@ -77,6 +77,8 @@ statement
     | ALTER TABLE multipartIdentifier createReplaceTagClause                                #createOrReplaceTag
     | ALTER TABLE multipartIdentifier DROP BRANCH (IF EXISTS)? identifier                   #dropBranch
     | ALTER TABLE multipartIdentifier DROP TAG (IF EXISTS)? identifier                      #dropTag
+    | ALTER TABLE multipartIdentifier CLUSTER BY fieldList                                  #setClusteringFields
+    | ALTER TABLE multipartIdentifier DROP CLUSTERING                                       #dropClustering
     ;
 
 createReplaceTagClause
@@ -213,7 +215,7 @@ fieldList
     ;
 
 nonReserved
-    : ADD | ALTER | AS | ASC | BRANCH | BY | CALL | CREATE | DAYS | DESC | DROP | EXISTS | FIELD | FIRST | HOURS | IF | LAST | NOT | NULLS | OF | OR | ORDERED | PARTITION | TABLE | WRITE
+    : ADD | ALTER | AS | ASC | BRANCH | BY | CALL | CLUSTER | CLUSTERING | CREATE | DAYS | DESC | DROP | EXISTS | FIELD | FIRST | HOURS | IF | LAST | NOT | NULLS | OF | OR | ORDERED | PARTITION | TABLE | WRITE
     | DISTRIBUTED | LOCALLY | MINUTES | MONTHS | UNORDERED | REPLACE | RETAIN | VERSION | WITH | IDENTIFIER_KW | FIELDS | SET | SNAPSHOT | SNAPSHOTS
     | TAG | TRUE | FALSE
     | MAP
@@ -270,6 +272,8 @@ SNAPSHOT: 'SNAPSHOT';
 SNAPSHOTS: 'SNAPSHOTS';
 TABLE: 'TABLE';
 TAG: 'TAG';
+CLUSTER: 'CLUSTER';
+CLUSTERING: 'CLUSTERING';
 UNORDERED: 'UNORDERED';
 VERSION: 'VERSION';
 WITH: 'WITH';

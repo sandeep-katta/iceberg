@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceBranch
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceTag
 import org.apache.spark.sql.catalyst.plans.logical.DescribeRelation
 import org.apache.spark.sql.catalyst.plans.logical.DropBranch
+import org.apache.spark.sql.catalyst.plans.logical.DropClustering
 import org.apache.spark.sql.catalyst.plans.logical.DropIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.DropPartitionField
 import org.apache.spark.sql.catalyst.plans.logical.DropTag
@@ -42,6 +43,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.OrderAwareCoalesce
 import org.apache.spark.sql.catalyst.plans.logical.RenameTable
 import org.apache.spark.sql.catalyst.plans.logical.ReplacePartitionField
+import org.apache.spark.sql.catalyst.plans.logical.SetClusteringFields
 import org.apache.spark.sql.catalyst.plans.logical.SetIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.SetViewProperties
 import org.apache.spark.sql.catalyst.plans.logical.SetWriteDistributionAndOrdering
@@ -91,6 +93,12 @@ case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy wi
 
     case DropIdentifierFields(IcebergCatalogAndIdentifier(catalog, ident), fields) =>
       DropIdentifierFieldsExec(catalog, ident, fields) :: Nil
+
+    case SetClusteringFields(IcebergCatalogAndIdentifier(catalog, ident), fields) =>
+      SetClusteringFieldsExec(catalog, ident, fields) :: Nil
+
+    case DropClustering(IcebergCatalogAndIdentifier(catalog, ident)) =>
+      DropClusteringExec(catalog, ident) :: Nil
 
     case SetWriteDistributionAndOrdering(
         IcebergCatalogAndIdentifier(catalog, ident), distributionMode, ordering) =>

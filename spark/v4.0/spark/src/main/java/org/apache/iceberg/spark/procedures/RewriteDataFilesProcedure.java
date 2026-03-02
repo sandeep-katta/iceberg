@@ -186,9 +186,15 @@ class RewriteDataFilesProcedure extends BaseProcedure {
         return rewriteDataFiles.sort(buildSortOrder(sortOrderFields, schema));
       }
       return rewriteDataFiles;
+    } else if (strategy.equalsIgnoreCase("cluster")) {
+      if (sortOrderString != null) {
+        throw new IllegalArgumentException(
+            "Cannot set sort_order when using cluster strategy");
+      }
+      return action.cluster();
     } else {
       throw new IllegalArgumentException(
-          "unsupported strategy: " + strategy + ". Only binpack or sort is supported");
+          "unsupported strategy: " + strategy + ". Supported values: binpack, sort, cluster");
     }
   }
 

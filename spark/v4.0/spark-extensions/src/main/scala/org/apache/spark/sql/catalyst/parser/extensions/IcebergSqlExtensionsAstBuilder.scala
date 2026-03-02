@@ -41,11 +41,13 @@ import org.apache.spark.sql.catalyst.plans.logical.BranchOptions
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceBranch
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceTag
 import org.apache.spark.sql.catalyst.plans.logical.DropBranch
+import org.apache.spark.sql.catalyst.plans.logical.DropClustering
 import org.apache.spark.sql.catalyst.plans.logical.DropIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.DropPartitionField
 import org.apache.spark.sql.catalyst.plans.logical.DropTag
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.logical.ReplacePartitionField
+import org.apache.spark.sql.catalyst.plans.logical.SetClusteringFields
 import org.apache.spark.sql.catalyst.plans.logical.SetIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.SetWriteDistributionAndOrdering
 import org.apache.spark.sql.catalyst.plans.logical.TagOptions
@@ -195,6 +197,22 @@ class IcebergSqlExtensionsAstBuilder(delegate: ParserInterface) extends IcebergS
     DropIdentifierFields(
       typedVisit[Seq[String]](ctx.multipartIdentifier),
       toSeq(ctx.fieldList.fields).map(_.getText))
+  }
+
+  /**
+   * Create a SET CLUSTERING FIELDS logical command.
+   */
+  override def visitSetClusteringFields(ctx: SetClusteringFieldsContext): SetClusteringFields = withOrigin(ctx) {
+    SetClusteringFields(
+      typedVisit[Seq[String]](ctx.multipartIdentifier),
+      toSeq(ctx.fieldList.fields).map(_.getText))
+  }
+
+  /**
+   * Create a DROP CLUSTERING logical command.
+   */
+  override def visitDropClustering(ctx: DropClusteringContext): DropClustering = withOrigin(ctx) {
+    DropClustering(typedVisit[Seq[String]](ctx.multipartIdentifier))
   }
 
   /**
