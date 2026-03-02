@@ -251,6 +251,9 @@ public class TableMetadata implements Serializable {
   private final int lastAssignedPartitionId;
   private final int defaultSortOrderId;
   private final List<SortOrder> sortOrders;
+  private final int defaultClusteringSpecId;
+  private final List<ClusteringSpec> clusteringSpecs;
+  private final Map<Integer, ClusteringSpec> clusteringSpecsById;
   private final Map<String, String> properties;
   private final long currentSnapshotId;
   private final Map<Integer, Schema> schemasById;
@@ -285,6 +288,8 @@ public class TableMetadata implements Serializable {
       int lastAssignedPartitionId,
       int defaultSortOrderId,
       List<SortOrder> sortOrders,
+      int defaultClusteringSpecId,
+      List<ClusteringSpec> clusteringSpecs,
       Map<String, String> properties,
       long currentSnapshotId,
       List<Snapshot> snapshots,
@@ -331,6 +336,12 @@ public class TableMetadata implements Serializable {
     this.lastAssignedPartitionId = lastAssignedPartitionId;
     this.defaultSortOrderId = defaultSortOrderId;
     this.sortOrders = sortOrders;
+    this.defaultClusteringSpecId = defaultClusteringSpecId;
+    this.clusteringSpecs =
+        clusteringSpecs != null && !clusteringSpecs.isEmpty()
+            ? clusteringSpecs
+            : ImmutableList.of(ClusteringSpec.unclustered());
+    this.clusteringSpecsById = indexClusteringSpecs(this.clusteringSpecs);
     this.properties = properties;
     this.currentSnapshotId = currentSnapshotId;
     this.snapshots = snapshots;
@@ -480,6 +491,26 @@ public class TableMetadata implements Serializable {
 
   public Map<Integer, SortOrder> sortOrdersById() {
     return sortOrdersById;
+  }
+
+  public int defaultClusteringSpecId() {
+    return defaultClusteringSpecId;
+  }
+
+  public ClusteringSpec clusteringSpec() {
+    return clusteringSpecsById.get(defaultClusteringSpecId);
+  }
+
+  public List<ClusteringSpec> clusteringSpecs() {
+    return clusteringSpecs;
+  }
+
+  public Map<Integer, ClusteringSpec> clusteringSpecsById() {
+    return clusteringSpecsById;
+  }
+
+  public TableMetadata replaceClusteringSpec(ClusteringSpec newSpec) {
+    return new Builder(this).setDefaultClusteringSpec(newSpec).build();
   }
 
   public String location() {
@@ -850,6 +881,15 @@ public class TableMetadata implements Serializable {
     return builder.build();
   }
 
+  private static Map<Integer, ClusteringSpec> indexClusteringSpecs(
+      List<ClusteringSpec> clusteringSpecs) {
+    ImmutableMap.Builder<Integer, ClusteringSpec> builder = ImmutableMap.builder();
+    for (ClusteringSpec spec : clusteringSpecs) {
+      builder.put(spec.specId(), spec);
+    }
+    return builder.build();
+  }
+
   private static Map<String, SnapshotRef> validateRefs(
       Long currentSnapshotId,
       Map<String, SnapshotRef> inputRefs,
@@ -906,6 +946,8 @@ public class TableMetadata implements Serializable {
     private int lastAssignedPartitionId;
     private int defaultSortOrderId;
     private List<SortOrder> sortOrders;
+    private int defaultClusteringSpecId;
+    private List<ClusteringSpec> clusteringSpecs;
     private final Map<String, String> properties;
     private long currentSnapshotId;
     private List<Snapshot> snapshots;
@@ -924,6 +966,8 @@ public class TableMetadata implements Serializable {
     private Integer lastAddedSchemaId = null;
     private Integer lastAddedSpecId = null;
     private Integer lastAddedOrderId = null;
+    @SuppressWarnings("UnusedVariable")
+    private Integer lastAddedClusteringSpecId = null;
 
     // handled in build
     private final List<HistoryEntry> snapshotLog;
@@ -949,6 +993,8 @@ public class TableMetadata implements Serializable {
       this.schemas = Lists.newArrayList();
       this.specs = Lists.newArrayList();
       this.sortOrders = Lists.newArrayList();
+      this.defaultClusteringSpecId = ClusteringSpec.UNPARTITIONED_SPEC_ID;
+      this.clusteringSpecs = Lists.newArrayList();
       this.properties = Maps.newHashMap();
       this.snapshots = Lists.newArrayList();
       this.currentSnapshotId = -1;
@@ -983,6 +1029,8 @@ public class TableMetadata implements Serializable {
       this.lastAssignedPartitionId = base.lastAssignedPartitionId;
       this.defaultSortOrderId = base.defaultSortOrderId;
       this.sortOrders = Lists.newArrayList(base.sortOrders);
+      this.defaultClusteringSpecId = base.defaultClusteringSpecId;
+      this.clusteringSpecs = Lists.newArrayList(base.clusteringSpecs);
       this.properties = Maps.newHashMap(base.properties);
       this.currentSnapshotId = base.currentSnapshotId;
       this.snapshots = Lists.newArrayList(base.snapshots());
@@ -1227,6 +1275,46 @@ public class TableMetadata implements Serializable {
     public Builder addSortOrder(SortOrder order) {
       addSortOrderInternal(order);
       return this;
+    }
+
+    public Builder setDefaultClusteringSpec(ClusteringSpec spec) {
+      int newSpecId = addClusteringSpecInternal(spec);
+      if (newSpecId == defaultClusteringSpecId) {
+        return this;
+      }
+      this.defaultClusteringSpecId = newSpecId;
+      return this;
+    }
+
+    private int addClusteringSpecInternal(ClusteringSpec spec) {
+      // check if an equivalent spec already exists
+      for (ClusteringSpec existing : clusteringSpecs) {
+        if (existing.sameSpec(spec)) {
+          this.lastAddedClusteringSpecId = existing.specId();
+          return existing.specId();
+        }
+      }
+
+      // assign next available spec id
+      int newSpecId =
+          clusteringSpecs.stream().mapToInt(ClusteringSpec::specId).max().orElse(0) + 1;
+
+      ClusteringSpec newSpec;
+      if (spec.specId() != newSpecId) {
+        // rebuild with the assigned id
+        ClusteringSpec.Builder builder =
+            ClusteringSpec.builderFor(schemasById.get(currentSchemaId)).withSpecId(newSpecId);
+        for (ClusteringField field : spec.fields()) {
+          builder.addField(field.transform(), field.sourceId(), field.name());
+        }
+        newSpec = builder.buildUnchecked();
+      } else {
+        newSpec = spec;
+      }
+
+      clusteringSpecs.add(newSpec);
+      this.lastAddedClusteringSpecId = newSpecId;
+      return newSpecId;
     }
 
     public Builder addSnapshot(Snapshot snapshot) {
@@ -1577,6 +1665,8 @@ public class TableMetadata implements Serializable {
           lastAssignedPartitionId,
           defaultSortOrderId,
           ImmutableList.copyOf(sortOrders),
+          defaultClusteringSpecId,
+          ImmutableList.copyOf(clusteringSpecs),
           ImmutableMap.copyOf(properties),
           currentSnapshotId,
           ImmutableList.copyOf(snapshots),

@@ -147,6 +147,9 @@ public interface RewriteDataFiles
    */
   String OUTPUT_SPEC_ID = "output-spec-id";
 
+  /** Strategy name for liquid clustering (incremental, Hilbert/Z-order based). */
+  String CLUSTERING_STRATEGY_NAME = "cluster";
+
   /**
    * Choose BINPACK as a strategy for this rewrite operation
    *
@@ -154,6 +157,19 @@ public interface RewriteDataFiles
    */
   default RewriteDataFiles binPack() {
     return this;
+  }
+
+  /**
+   * Choose CLUSTER as a strategy for this rewrite operation. Uses incremental liquid clustering:
+   * only files that are unclustered, have a stale cluster spec, or belong to unsealed cluster cubes
+   * are rewritten. Files are sorted using the curve configured via {@code
+   * write.clustering.curve} (Z-order by default).
+   *
+   * @return this for method chaining
+   */
+  default RewriteDataFiles cluster() {
+    throw new UnsupportedOperationException(
+        "CLUSTER Rewrite Strategy not implemented for this framework");
   }
 
   /**

@@ -198,6 +198,27 @@ public interface Table {
   ReplaceSortOrder replaceSortOrder();
 
   /**
+   * Returns the current {@link ClusteringSpec} for this table. Returns an unclustered spec if
+   * liquid clustering has not been configured.
+   *
+   * @return the current clustering spec
+   */
+  default ClusteringSpec clusteringSpec() {
+    return ClusteringSpec.unclustered();
+  }
+
+  /**
+   * Create a new {@link UpdateClusteringSpec} to define or replace the liquid clustering spec for
+   * this table and commit the change.
+   *
+   * @return a new {@link UpdateClusteringSpec}
+   */
+  default UpdateClusteringSpec updateClusteringSpec() {
+    throw new UnsupportedOperationException(
+        getClass().getName() + " does not implement updateClusteringSpec");
+  }
+
+  /**
    * Create a new {@link UpdateLocation} to update table location and commit the changes.
    *
    * @return a new {@link UpdateLocation}

@@ -100,6 +100,8 @@ public class TableMetadataParser {
   static final String LAST_PARTITION_ID = "last-partition-id";
   static final String DEFAULT_SORT_ORDER_ID = "default-sort-order-id";
   static final String SORT_ORDERS = "sort-orders";
+  static final String DEFAULT_CLUSTERING_SPEC_ID = "default-clustering-spec-id";
+  static final String CLUSTERING_SPECS = "clustering-specs";
   static final String PROPERTIES = "properties";
   static final String CURRENT_SNAPSHOT_ID = "current-snapshot-id";
   static final String REFS = "refs";
@@ -213,6 +215,18 @@ public class TableMetadataParser {
       SortOrderParser.toJson(sortOrder, generator);
     }
     generator.writeEndArray();
+
+    // write the default clustering spec ID and clustering spec list (omit if unclustered)
+    if (metadata.clusteringSpec().isClustered()) {
+      generator.writeNumberField(DEFAULT_CLUSTERING_SPEC_ID, metadata.defaultClusteringSpecId());
+      generator.writeArrayFieldStart(CLUSTERING_SPECS);
+      for (ClusteringSpec spec : metadata.clusteringSpecs()) {
+        if (spec.isClustered()) {
+          ClusteringSpecParser.toJson(spec, generator);
+        }
+      }
+      generator.writeEndArray();
+    }
 
     // write properties map
     JsonUtil.writeStringMap(PROPERTIES, metadata.properties(), generator);
@@ -467,6 +481,24 @@ public class TableMetadataParser {
       defaultSortOrderId = defaultSortOrder.orderId();
     }
 
+    // parse the clustering specs (optional — absent means unclustered)
+    JsonNode clusteringSpecArray = node.get(CLUSTERING_SPECS);
+    List<ClusteringSpec> clusteringSpecs;
+    int defaultClusteringSpecId;
+    if (clusteringSpecArray != null) {
+      defaultClusteringSpecId = JsonUtil.getInt(DEFAULT_CLUSTERING_SPEC_ID, node);
+      ImmutableList.Builder<ClusteringSpec> clusteringSpecsBuilder = ImmutableList.builder();
+      for (JsonNode specNode : clusteringSpecArray) {
+        clusteringSpecsBuilder.add(
+            ClusteringSpecParser.fromJson(schema, specNode, defaultClusteringSpecId));
+      }
+      clusteringSpecs = clusteringSpecsBuilder.build();
+    } else {
+      ClusteringSpec unclustered = ClusteringSpec.unclustered();
+      clusteringSpecs = ImmutableList.of(unclustered);
+      defaultClusteringSpecId = unclustered.specId();
+    }
+
     Map<String, String> properties;
     if (node.has(PROPERTIES)) {
       // parse properties map
@@ -577,6 +609,8 @@ public class TableMetadataParser {
         lastAssignedPartitionId,
         defaultSortOrderId,
         sortOrders,
+        defaultClusteringSpecId,
+        clusteringSpecs,
         properties,
         currentSnapshotId,
         snapshots,

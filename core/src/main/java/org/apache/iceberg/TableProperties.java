@@ -391,4 +391,45 @@ public class TableProperties {
   public static final int ENCRYPTION_DEK_LENGTH_DEFAULT = 16;
 
   public static final int ENCRYPTION_AAD_LENGTH_DEFAULT = 16;
+
+  // Liquid clustering properties
+
+  /** Whether liquid clustering metadata (clusterSpecId) is stamped on newly written files. */
+  public static final String WRITE_CLUSTERING_ENABLED = "write.clustering.enabled";
+
+  public static final boolean WRITE_CLUSTERING_ENABLED_DEFAULT = false;
+
+  /**
+   * Space-filling curve algorithm used during clustering OPTIMIZE. Supported values: "zorder"
+   * (default, already implemented), "hilbert" (future).
+   */
+  public static final String WRITE_CLUSTERING_CURVE = "write.clustering.curve";
+
+  public static final String WRITE_CLUSTERING_CURVE_ZORDER = "zorder";
+  public static final String WRITE_CLUSTERING_CURVE_HILBERT = "hilbert";
+  public static final String WRITE_CLUSTERING_CURVE_DEFAULT = WRITE_CLUSTERING_CURVE_ZORDER;
+
+  /**
+   * Minimum total size in bytes for a cluster cube to be considered sealed. Sealed cubes are
+   * skipped during incremental OPTIMIZE (never rewritten). Default: ~51.2 GB (100 × 512 MB).
+   */
+  public static final String WRITE_CLUSTERING_MIN_CUBE_SIZE_BYTES =
+      "write.clustering.min-cube-size-bytes";
+
+  public static final long WRITE_CLUSTERING_MIN_CUBE_SIZE_BYTES_DEFAULT =
+      54_975_581_388L; // 51.2 GB
+
+  /**
+   * Target total size in bytes for a cluster cube rewrite group. Default: 1.5 × min cube size.
+   */
+  public static final String WRITE_CLUSTERING_TARGET_CUBE_SIZE_BYTES =
+      "write.clustering.target-cube-size-bytes";
+
+  public static final long WRITE_CLUSTERING_TARGET_CUBE_SIZE_BYTES_DEFAULT =
+      82_463_372_083L; // ~76.8 GB
+
+  /** Maximum number of files per cluster cube rewrite group. */
+  public static final String WRITE_CLUSTERING_MAX_CUBE_FILES = "write.clustering.max-cube-files";
+
+  public static final int WRITE_CLUSTERING_MAX_CUBE_FILES_DEFAULT = 50;
 }

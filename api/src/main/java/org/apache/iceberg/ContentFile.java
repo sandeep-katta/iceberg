@@ -134,6 +134,22 @@ public interface ContentFile<F> {
   }
 
   /**
+   * Returns the cluster cube ID of this file. Files written as part of the same liquid clustering
+   * OPTIMIZE run share the same cube ID (a UUID string). Returns null for unclustered files.
+   */
+  default String clusterCubeId() {
+    return null;
+  }
+
+  /**
+   * Returns the clustering spec ID that was active when this file was written. Returns null for
+   * files written before liquid clustering was enabled.
+   */
+  default Integer clusterSpecId() {
+    return null;
+  }
+
+  /**
    * Returns the data sequence number of the file.
    *
    * <p>This method represents the sequence number to which the file should apply. Note the data

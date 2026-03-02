@@ -171,6 +171,16 @@ public class BaseTable implements Table, HasTableOperations, Serializable {
   }
 
   @Override
+  public ClusteringSpec clusteringSpec() {
+    return ops.current().clusteringSpec();
+  }
+
+  @Override
+  public UpdateClusteringSpec updateClusteringSpec() {
+    return new BaseUpdateClusteringSpec(ops);
+  }
+
+  @Override
   public UpdateLocation updateLocation() {
     return new SetLocation(ops);
   }

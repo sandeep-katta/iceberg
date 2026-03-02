@@ -121,6 +121,8 @@ public class RewriteTablePathUtil {
         metadata.lastAssignedPartitionId(),
         metadata.defaultSortOrderId(),
         metadata.sortOrders(),
+        metadata.defaultClusteringSpecId(),
+        metadata.clusteringSpecs(),
         properties,
         snapshotId,
         newSnapshots,

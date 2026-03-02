@@ -124,7 +124,20 @@ public interface DataFile extends ContentFile<DataFile> {
   String PARTITION_NAME = "partition";
   String PARTITION_DOC = "Partition data tuple, schema based on the partition spec";
 
-  // NEXT ID TO ASSIGN: 146
+  Types.NestedField CLUSTER_CUBE_ID =
+      optional(
+          146,
+          "cluster_cube_id",
+          StringType.get(),
+          "UUID of the liquid cluster cube this file belongs to");
+  Types.NestedField CLUSTER_SPEC_ID =
+      optional(
+          147,
+          "cluster_spec_id",
+          IntegerType.get(),
+          "Clustering spec ID used when this file was written");
+
+  // NEXT ID TO ASSIGN: 148
 
   static StructType getType(StructType partitionType) {
     // IDs start at 100 to leave room for changes to ManifestEntry
@@ -149,7 +162,9 @@ public interface DataFile extends ContentFile<DataFile> {
         FIRST_ROW_ID,
         REFERENCED_DATA_FILE,
         CONTENT_OFFSET,
-        CONTENT_SIZE);
+        CONTENT_SIZE,
+        CLUSTER_CUBE_ID,
+        CLUSTER_SPEC_ID);
   }
 
   /**
